@@ -12,27 +12,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Install Homebrew
-        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      - uses: azure/setup-kubectl@v3
 
-      - name: Install Minikube
-        run: brew install minikube
+      - uses: azure/setup-helm@v3
+        with:
+          version: 'v3.12.2'
 
-      - name: Start Minikube
-        run: minikube start --disk-size=40g --extra-disks 1 --driver qemu
-
-      - name: Install Helm
-        run: brew install helm
+      - name: Start minikube
+        uses: medyagh/setup-minikube@latest
+        id: minikube
+        with:
+          cache: true
+          cpus: 2
+          memory: 8000m
+          start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
 
       - name: Install Rook Operator
-        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph \
-          --set csi.enableRbdDriver=false \
-          --set csi.enableCephfsDriver=false \
-          --set csi.enableCephfsSnapshotter=false \
-          --set csi.enableRBDSnapshotter=false
+        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi=null
 
       - name: Apply CephCluster configuration
         run: |
