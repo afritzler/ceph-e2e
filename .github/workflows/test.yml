@@ -23,7 +23,7 @@ jobs:
         id: minikube
         with:
           cache: true
-          cpus: 2
+          cpus: 3
           memory: 8000m
           start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
 
@@ -31,7 +31,23 @@ jobs:
         run: helm repo add rook-release https://charts.rook.io/release
 
       - name: Install Rook Operator
-        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi=null
+        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi.enableRbdDriver=false --set csi.enableCephfsDriver=false
+
+      - name: Verify Rook CRDs installation
+        run: |
+          sleep 5
+          end=$((SECONDS+20))  # 20 seconds timeout
+          while [ $SECONDS -lt $end ]; do
+            if kubectl get crds | grep -q 'cephclusters.ceph.rook.io'; then
+              echo "Rook CRDs have been installed!"
+              exit 0
+            fi
+            echo "Waiting for Rook CRDs to be installed..."
+            sleep 10
+          done
+          
+          echo "Timeout waiting for Rook CRDs!"
+          exit 1
 
       - name: Apply CephCluster configuration
         run: |
