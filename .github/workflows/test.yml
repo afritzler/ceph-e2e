@@ -96,8 +96,14 @@ jobs:
               requireSafeReplicaSize: false
           EOF
 
-      - name: Check Ceph status
-        run: kubectl -n rook-ceph get cephcluster
+      - name: Wait for CephCluster to be healthy
+        run: |
+          echo "Waiting for CephCluster to be healthy..."
+          until [[ "$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')" == "HEALTH_OK" ]]; do
+          echo "CephCluster is not healthy yet, waiting..."
+          sleep 5
+          done
+          echo "CephCluster is healthy!"
 
       - name: Your subsequent steps
         run: echo "You can run other steps that use Minikube and Ceph here."
