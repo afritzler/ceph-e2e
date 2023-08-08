@@ -1,4 +1,4 @@
-name: Setup Minikube on macOS
+name: Setup Minikube and Ceph on macOS
 
 on:
   push:
@@ -21,8 +21,38 @@ jobs:
       - name: Start Minikube
         run: minikube start
 
-      - name: Check Minikube status
-        run: minikube status
+      - name: Install Helm
+        run: brew install helm
+
+      - name: Add Rook repository
+        run: helm repo add rook-release https://charts.rook.io/release
+
+      - name: Install Rook Operator
+        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph
+
+      - name: Apply CephCluster configuration
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: ceph.rook.io/v1
+          kind: CephCluster
+          metadata:
+            name: my-cluster
+            namespace: rook-ceph
+          spec:
+            cephVersion:
+              image: ceph/ceph:v16
+            dataDirHostPath: /var/lib/rook
+            mon:
+              count: 3
+            storage:
+              useAllNodes: true
+              useAllDevices: false
+              directories:
+              - path: /var/lib/rook
+          EOF
+
+      - name: Check Ceph status
+        run: kubectl -n rook-ceph get cephcluster
 
       - name: Your subsequent steps
-        run: echo "You can run other steps that use Minikube here."
+        run: echo "You can run other steps that use Minikube and Ceph here."
