@@ -1,0 +1,28 @@
+name: Setup Minikube on macOS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  setup-minikube:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+      - name: Install Minikube
+        run: brew install minikube
+
+      - name: Start Minikube
+        run: minikube start
+
+      - name: Check Minikube status
+        run: minikube status
+
+      - name: Your subsequent steps
+        run: echo "You can run other steps that use Minikube here."
