@@ -28,7 +28,11 @@ jobs:
         run: helm repo add rook-release https://charts.rook.io/release
 
       - name: Install Rook Operator
-        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph
+        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph \
+          --set csi.enableRbdDriver=false \
+          --set csi.enableCephfsDriver=false \
+          --set csi.enableCephfsSnapshotter=false \
+          --set csi.enableRBDSnapshotter=false
 
       - name: Apply CephCluster configuration
         run: |
