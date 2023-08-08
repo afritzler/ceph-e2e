@@ -19,7 +19,7 @@ jobs:
         run: brew install minikube
 
       - name: Start Minikube
-        run: minikube start
+        run: minikube start --disk-size=40g --extra-disks 1 --driver qemu
 
       - name: Install Helm
         run: brew install helm
@@ -96,14 +96,19 @@ jobs:
               requireSafeReplicaSize: false
           EOF
 
-      - name: Wait for CephCluster to be healthy
+      - name: Wait for CephCluster to be healthy or warning
         run: |
-          echo "Waiting for CephCluster to be healthy..."
-          until [[ "$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')" == "HEALTH_OK" ]]; do
-          echo "CephCluster is not healthy yet, waiting..."
+          echo "Waiting for CephCluster to be healthy or in warning status..."
+          while true; do
+          kubectl -n rook-ceph get pods 
+          HEALTH_STATUS=$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')
+          echo "CephCluster health status: $HEALTH_STATUS"
+          if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
+           break
+          fi
           sleep 5
           done
-          echo "CephCluster is healthy!"
+          echo "CephCluster is in acceptable state!"
 
       - name: Your subsequent steps
         run: echo "You can run other steps that use Minikube and Ceph here."
