@@ -1,4 +1,4 @@
-name: Setup Minikube and Ceph on macOS
+name: e2e tests
 
 on:
   push:
@@ -22,11 +22,18 @@ jobs:
         with:
           version: 'v3.12.2'
 
+      - name: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+      - name: Install ceph-client
+        run: |
+          brew tap mulbc/ceph-client
+          brew install ceph-client
+
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
         id: minikube
         with:
-          cache: true
           cpus: 3
           memory: 8000m
           start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
@@ -36,22 +43,6 @@ jobs:
 
       - name: Install Rook Operator
         run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi.enableRbdDriver=false --set csi.enableCephfsDriver=false
-
-      - name: Verify Rook CRDs installation
-        run: |
-          sleep 5
-          end=$((SECONDS+20))  # 20 seconds timeout
-          while [ $SECONDS -lt $end ]; do
-            if kubectl get crds | grep -q 'cephclusters.ceph.rook.io'; then
-              echo "Rook CRDs have been installed!"
-              exit 0
-            fi
-            echo "Waiting for Rook CRDs to be installed..."
-            sleep 10
-          done
-          
-          echo "Timeout waiting for Rook CRDs!"
-          exit 1
 
       - name: Apply CephCluster configuration
         run: |
@@ -143,7 +134,7 @@ jobs:
           if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
            break
           fi
-          sleep 5
+          sleep 30
           done
           echo "CephCluster is in acceptable state!"
 
@@ -156,8 +147,8 @@ jobs:
           echo "CEPH_KEY=$keyring" >> $GITHUB_ENV
           echo "CEPH_KEY=$keyring"
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
-          echo "CEPH_MONITORS=${string#*\\[}" >> $GITHUB_ENV
-          echo "CEPH_MONITORS=${string#*\\[}"
+          echo "CEPH_MONITORS=${mon#*\\[}" >> $GITHUB_ENV
+          echo "CEPH_MONITORS=${mon#*\\[}"
 
       - name: Run tests
-        run: go test ./...
+        run: CGO=1 go test ./...
