@@ -12,6 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - uses: actions/setup-go@v4
+        with:
+          go-version-file: 'go.mod'
+
       - uses: azure/setup-kubectl@v3
 
       - uses: azure/setup-helm@v3
@@ -52,8 +56,8 @@ jobs:
       - name: Apply CephCluster configuration
         run: |
           cat <<EOF | kubectl apply -f -
-          kind: ConfigMap
           apiVersion: v1
+          kind: ConfigMap
           metadata:
             name: rook-config-override
             namespace: rook-ceph
@@ -106,13 +110,27 @@ jobs:
           apiVersion: ceph.rook.io/v1
           kind: CephBlockPool
           metadata:
-            name: builtin-mgr
+            name: cephlet-pool
             namespace: rook-ceph
           spec:
             name: .mgr
+            erasureCoded:
+              codingChunks: 0
+              dataChunks: 0
             replicated:
               size: 1
               requireSafeReplicaSize: false
+          ---
+          apiVersion: ceph.rook.io/v1
+          kind: CephClient
+          metadata:
+            name: cephlet-pool
+            namespace: rook-ceph
+          spec:
+            caps:
+              mgr: profile rbd pool=cephlet-pool
+              mon: profile rbd
+              osd: profile rbd pool=cephlet-pool
           EOF
 
       - name: Wait for CephCluster to be healthy or warning
@@ -129,5 +147,17 @@ jobs:
           done
           echo "CephCluster is in acceptable state!"
 
-      - name: Your subsequent steps
-        run: echo "You can run other steps that use Minikube and Ceph here."
+      - name: Set Environment Variables
+        run: |
+          echo "CEPH_USERNAME=admin" >> $GITHUB_ENV
+          echo "CEPH_POOLNAME=cephlet-pool" >> $GITHUB_ENV
+          echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
+          keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
+          echo "CEPH_KEY=$keyring" >> $GITHUB_ENV
+          echo "CEPH_KEY=$keyring"
+          mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
+          echo "CEPH_MONITORS=${string#*\\[}" >> $GITHUB_ENV
+          echo "CEPH_MONITORS=${string#*\\[}"
+
+      - name: Run tests
+        run: go test ./...
