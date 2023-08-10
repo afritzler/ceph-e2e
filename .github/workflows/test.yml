@@ -28,8 +28,20 @@ jobs:
       - name: Install Homebrew
         run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - name: Activate virtual environment and install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install Cython==0.29.36
+
       - name: Install ceph-client
         run: |
+          mkdir -p /usr/local/opt/cython/libexec
+          sudo chown -R ${USER} /usr/local/opt/cython
           brew tap afritzler/ceph-client
           brew install ceph-client
 
