@@ -1,6 +1,7 @@
 package ceph_e2e
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
@@ -28,7 +29,7 @@ var (
 	volumeClient v1alpha1.VolumeRuntimeClient
 )
 
-var _ = BeforeSuite(func(ctx SpecContext) {
+var _ = BeforeSuite(func() {
 	keyEncryptionKeyFile, err := os.CreateTemp(GinkgoT().TempDir(), "keyencryption")
 	Expect(err).NotTo(HaveOccurred())
 	defer func() {
@@ -53,6 +54,10 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	}()
 	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), volumeClassesData, 0666)).To(Succeed())
 
+	var srvCtx context.Context
+	srvCtx, cancel := context.WithCancel(context.Background())
+	DeferCleanup(cancel)
+
 	opts := app.Options{
 		Address:                    "/var/run/cephlet-volume.sock",
 		PathSupportedVolumeClasses: volumeClassesFile.Name(),
@@ -65,7 +70,10 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
 		},
 	}
-	Expect(app.Run(ctx, opts)).To(Succeed())
+	go func() {
+		defer GinkgoRecover()
+		Expect(app.Run(srvCtx, opts)).To(Succeed())
+	}()
 
 	address, err := volume.GetAddressWithTimeout(3*time.Second, opts.Address)
 	Expect(err).NotTo(HaveOccurred())
