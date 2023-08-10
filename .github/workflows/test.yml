@@ -30,7 +30,7 @@ jobs:
 
       - name: Install ceph-client
         run: |
-          brew tap mulbc/ceph-client
+          brew tap afritzler/ceph-client
           brew install ceph-client
 
       - name: Start minikube
