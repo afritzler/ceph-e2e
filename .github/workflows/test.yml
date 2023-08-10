@@ -6,8 +6,8 @@ on:
       - main
 
 jobs:
-  setup-minikube:
-    runs-on: macos-latest
+  e2e-tests:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -22,21 +22,18 @@ jobs:
         with:
           version: 'v3.12.2'
 
-      - name: Install Homebrew
-        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-      - name: Install ceph-client
+      - name: Update APT and install ceph libs
         run: |
-          brew tap mulbc/ceph-client
-          brew install ceph-client
+          sudo apt-get update
+          sudo apt-get install -y libcephfs-dev librbd-dev librados-dev
 
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
         id: minikube
         with:
-          cpus: 3
-          memory: 8000m
-          start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
+          cpus: 2
+          memory: 6000m
+          start-args: '--disk-size=40g --extra-disks 1'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -147,8 +144,8 @@ jobs:
           echo "CEPH_KEY=$keyring" >> $GITHUB_ENV
           echo "CEPH_KEY=$keyring"
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
-          echo "CEPH_MONITORS=${mon#*\\[}" >> $GITHUB_ENV
-          echo "CEPH_MONITORS=${mon#*\\[}"
+          echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')" >> $GITHUB_ENV
+          echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')"
 
       - name: Run tests
         run: CGO=1 go test ./...
