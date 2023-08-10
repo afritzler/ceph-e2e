@@ -41,6 +41,21 @@ jobs:
       - name: Install Rook Operator
         run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi.enableRbdDriver=false --set csi.enableCephfsDriver=false
 
+      - name: Verify Rook CRDs installation
+        run: |
+          end=$((SECONDS+20))  # 20 seconds timeout
+          while [ $SECONDS -lt $end ]; do
+            if kubectl get crds | grep -q 'cephclusters.ceph.rook.io'; then
+              echo "Rook CRDs have been installed!"
+              exit 0
+            fi
+            echo "Waiting for Rook CRDs to be installed..."
+            sleep 10
+          done
+          
+          echo "Timeout waiting for Rook CRDs!"
+          exit 1
+
       - name: Apply CephCluster configuration
         run: |
           cat <<EOF | kubectl apply -f -
