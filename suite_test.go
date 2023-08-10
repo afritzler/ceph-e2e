@@ -3,7 +3,6 @@ package ceph_e2e
 import (
 	"encoding/json"
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
-	v1alpha12 "github.com/onmetal/onmetal-api/ori/apis/meta/v1alpha1"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
 	"github.com/onmetal/onmetal-api/ori/remote/volume"
 	"google.golang.org/grpc"
@@ -76,44 +75,4 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 
 	volumeClient = v1alpha1.NewVolumeRuntimeClient(conn)
 	DeferCleanup(conn.Close)
-
-	resp, err := volumeClient.ListVolumeClasses(ctx, &v1alpha1.ListVolumeClassesRequest{})
-	Expect(resp.VolumeClasses).To(Equal(volumeClasses))
-
-	createResp, err := volumeClient.CreateVolume(ctx, &v1alpha1.CreateVolumeRequest{
-		Volume: &v1alpha1.Volume{
-			Metadata: &v1alpha12.ObjectMetadata{
-				Id: "foo",
-			},
-			Spec: &v1alpha1.VolumeSpec{
-				Class: "foo",
-				Resources: &v1alpha1.VolumeResources{
-					StorageBytes: 1024 * 1024 * 1024,
-				},
-			},
-		},
-	})
-	Expect(err).NotTo(HaveOccurred())
-	Expect(createResp).To(Equal(v1alpha1.CreateVolumeResponse{
-		Volume: &v1alpha1.Volume{
-			Metadata: &v1alpha12.ObjectMetadata{
-				Id: "foo",
-			},
-			Spec: &v1alpha1.VolumeSpec{
-				Class: "foo",
-				Resources: &v1alpha1.VolumeResources{
-					StorageBytes: 1024 * 1024 * 1024,
-				},
-			},
-			Status: &v1alpha1.VolumeStatus{
-				State: v1alpha1.VolumeState_VOLUME_AVAILABLE,
-				Access: &v1alpha1.VolumeAccess{
-					Driver:     "",
-					Handle:     "",
-					Attributes: nil,
-					SecretData: nil,
-				},
-			},
-		},
-	}))
 })
