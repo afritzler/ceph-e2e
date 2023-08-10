@@ -8,7 +8,7 @@ on:
 
 jobs:
   e2e-tests:
-    runs-on: macos-13
+    runs-on: ubuntu-latest
     if: contains(github.event.pull_request.labels.*.name, 'e2e-tests')
 
     steps:
@@ -25,29 +25,25 @@ jobs:
         with:
           version: 'v3.12.2'
 
-      - name: Install Homebrew
-        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-      - name: Install ceph-client
+      - name: Update APT and install ceph libs
         run: |
-          brew tap mulbc/ceph-client
-          brew install ceph-client
+          sudo apt-get update
+          sudo apt-get install -y libcephfs-dev librbd-dev librados-dev
 
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
         id: minikube
         with:
-          cpus: 3
-          memory: 8000m
+          cpus: 2
+          memory: 4096m
           cni: bridge
-          start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
-
-      - name: Add Rook repository
-        run: helm repo add rook-release https://charts.rook.io/release
-
+          start-args: '--disk-size=40g --extra-disks 1'
       - name: Install Rook Operator
-        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi.enableRbdDriver=false --set csi.enableCephfsDriver=false
-
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/rook/rook/v1.10.11/deploy/examples/crds.yaml
+          kubectl apply -f https://raw.githubusercontent.com/rook/rook/v1.10.11/deploy/examples/common.yaml
+          kubectl apply -f https://raw.githubusercontent.com/rook/rook/v1.10.11/deploy/examples/operator.yaml
+          kubectl wait --for=condition=ready --timeout=60s pod -n rook-ceph -l app=rook-ceph-operator
       - name: Verify Rook CRDs installation
         run: |
           end=$((SECONDS+20))  # 20 seconds timeout
@@ -65,91 +61,48 @@ jobs:
 
       - name: Apply CephCluster configuration
         run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: rook-config-override
-            namespace: rook-ceph
-          data:
-            config: |
-              [global]
-              osd_pool_default_size = 1
-              mon_warn_on_pool_no_redundancy = false
-              bdev_flock_retry = 20
-              bluefs_buffered_io = false
-              mon_data_avail_warn = 10
-          ---
+          cat <<EOF | kubectl apply -f - 
           apiVersion: ceph.rook.io/v1
           kind: CephCluster
           metadata:
             name: my-cluster
             namespace: rook-ceph
           spec:
+            dataDirHostPath: /var/lib/rook
+            mon:
+              count: 1
+              allowMultiplePerNode: true
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: standard
+                  resources:
+                    requests:
+                      storage: 10Gi
             cephVersion:
-              allowUnsupported: true
-              image: quay.io/ceph/ceph:v17
-            cleanupPolicy:
-              sanitizeDisks: {}
-            crashCollector:
-              disable: true
+              image: quay.io/ceph/ceph:v17.2.6
+              allowUnsupported: false
             dashboard:
               enabled: true
-            dataDirHostPath: /var/lib/rook
-            disruptionManagement:
-              managePodBudgets: true
-            external: {}
-            healthCheck:
-              daemonHealth:
-                mon:
-                  interval: 45s
-                  timeout: 600s
-                osd: {}
-                status: {}
-            logCollector: {}
-            mgr:
-              allowMultiplePerNode: true
-              count: 1
-            mon:
-              allowMultiplePerNode: true
-              count: 1
-            monitoring: {}
             network:
               hostNetwork: true
-            priorityClassNames:
-              all: system-node-critical
-              mgr: system-cluster-critical
-            security:
-              kms: {}
             storage:
-              useAllDevices: true
-              useAllNodes: true
-          ---
-          apiVersion: ceph.rook.io/v1
-          kind: CephBlockPool
-          metadata:
-            name: cephlet-pool
-            namespace: rook-ceph
-          spec:
-            name: .mgr
-            erasureCoded:
-              codingChunks: 0
-              dataChunks: 0
-            replicated:
-              size: 1
-              requireSafeReplicaSize: false
-          ---
-          apiVersion: ceph.rook.io/v1
-          kind: CephClient
-          metadata:
-            name: cephlet-pool
-            namespace: rook-ceph
-          spec:
-            caps:
-              mgr: profile rbd pool=cephlet-pool
-              mon: profile rbd
-              osd: profile rbd pool=cephlet-pool
+              storageClassDeviceSets:
+                - name: set1
+                  count: 1
+                  portable: false
+                  volumeClaimTemplates:
+                    - metadata:
+                        name: data
+                      spec:
+                        resources:
+                          requests:
+                            storage: 10Gi
+                        storageClassName: standard
+                        volumeMode: Block
+                        accessModes:
+                          - ReadWriteOnce
           EOF
+          kubectl apply -f https://raw.githubusercontent.com/onmetal/cephlet/main/docs/development/rook/pool.yaml
 
       - name: Wait for CephCluster to be healthy or warning
         run: |
@@ -169,8 +122,11 @@ jobs:
 
       - name: Wait for CephCluster to become ready
         run: |
-          kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
-          kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
+          kubectl wait --for=condition=ready --timeout=60s pod -n rook-ceph -l app=rook-ceph-mon
+          kubectl wait --for=condition=ready --timeout=60s cephcluster -n rook-ceph my-cluster
+          sleep 30
+          kubectl -n rook-ceph logs -l app=rook-ceph-operator
+          sleep 30
           kubectl -n rook-ceph logs -l app=rook-ceph-operator
           kubectl wait --for=condition=ready --timeout=60s cephblockpool -n rook-ceph cephlet-pool
 
