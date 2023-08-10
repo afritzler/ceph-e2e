@@ -1,4 +1,4 @@
-package ceph_e2e
+package e2e
 
 import (
 	v1alpha12 "github.com/onmetal/onmetal-api/ori/apis/meta/v1alpha1"
@@ -14,8 +14,8 @@ var _ = Describe("Create Volume", func() {
 		Expect(resp.VolumeClasses).To(Equal([]v1alpha1.VolumeClass{{
 			Name: "foo",
 			Capabilities: &v1alpha1.VolumeClassCapabilities{
-				Tps:  100,
-				Iops: 100,
+				Tps:  10,
+				Iops: 10,
 			},
 		}}))
 	})

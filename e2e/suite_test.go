@@ -1,4 +1,4 @@
-package ceph_e2e
+package e2e
 
 import (
 	"context"
