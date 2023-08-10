@@ -8,7 +8,7 @@ on:
 
 jobs:
   e2e-tests:
-    runs-on: ubuntu-latest
+    runs-on: macos-13
     if: contains(github.event.pull_request.labels.*.name, 'e2e-tests')
 
     steps:
@@ -25,19 +25,22 @@ jobs:
         with:
           version: 'v3.12.2'
 
-      - name: Update APT and install ceph libs
+      - name: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+      - name: Install ceph-client
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libcephfs-dev librbd-dev librados-dev
+          brew tap mulbc/ceph-client
+          brew install ceph-client
 
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
         id: minikube
         with:
-          cpus: 2
-          memory: 4096m
+          cpus: 3
+          memory: 8000m
           cni: bridge
-          start-args: '--disk-size=40g --extra-disks 1'
+          start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -169,7 +172,7 @@ jobs:
           kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
           kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
           kubectl -n rook-ceph logs -l app=rook-ceph-operator
-          kubectl wait --for=condition=ready --timeout=30s cephblockpool -n rook-ceph cephlet-pool
+          kubectl wait --for=condition=ready --timeout=60s cephblockpool -n rook-ceph cephlet-pool
 
       - name: Set Environment Variables
         run: |
