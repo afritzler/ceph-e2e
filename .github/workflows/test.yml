@@ -36,6 +36,7 @@ jobs:
         with:
           cpus: 2
           memory: 4096m
+          cni: bridge
           start-args: '--disk-size=40g --extra-disks 1'
 
       - name: Add Rook repository
@@ -102,6 +103,8 @@ jobs:
               #deviceFilter:
             monitoring:
               enabled: false
+            network:
+              hostNetwork: true
             healthCheck:
               daemonHealth:
                 mon:
@@ -160,10 +163,8 @@ jobs:
           echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
           keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
           echo "CEPH_KEY=$keyring" >> $GITHUB_ENV
-          echo "CEPH_KEY=$keyring"
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
           echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')" >> $GITHUB_ENV
-          echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')"
 
       - name: Run tests
         run: E2E_TESTS=true CGO=1 go test ./...

@@ -3,6 +3,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
 	"github.com/onmetal/onmetal-api/ori/remote/volume"
@@ -17,14 +18,12 @@ import (
 )
 
 func TestGRPCServer(t *testing.T) {
-	if os.Getenv("E2E_TESTS") == "true" {
+	if os.Getenv("E2E_TESTS") != "true" {
 		t.Skip("Skipping test because E2E_TESTS is set to true")
 	}
 
-	sConfig, rConfig := GinkgoConfiguration()
-	rConfig.FullTrace = true
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "GRPC Server Suite", sConfig, rConfig)
+	RunSpecs(t, "GRPC Server Suite")
 }
 
 var (
@@ -37,7 +36,7 @@ var _ = BeforeEach(func() {
 	defer func() {
 		_ = keyEncryptionKeyFile.Close()
 	}()
-	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), []byte("foooooooooooooooooooooooooooooooooooooooooooooooooooo"), 0666)).To(Succeed())
+	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), []byte("abcjdkekakakakakakakkadfkkasfdks"), 0666)).To(Succeed())
 
 	volumeClasses := []v1alpha1.VolumeClass{{
 		Name: "foo",
@@ -54,7 +53,7 @@ var _ = BeforeEach(func() {
 	defer func() {
 		_ = volumeClassesFile.Close()
 	}()
-	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), volumeClassesData, 0666)).To(Succeed())
+	Expect(os.WriteFile(volumeClassesFile.Name(), volumeClassesData, 0666)).To(Succeed())
 
 	srvCtx, cancel := context.WithCancel(context.Background())
 	DeferCleanup(cancel)
@@ -71,12 +70,9 @@ var _ = BeforeEach(func() {
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
 		},
 	}
-	go func() {
-		defer GinkgoRecover()
-		Expect(app.Run(srvCtx, opts)).To(Succeed())
-	}()
+	Expect(app.Run(srvCtx, opts)).To(Succeed())
 
-	address, err := volume.GetAddressWithTimeout(3*time.Second, opts.Address)
+	address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
 	Expect(err).NotTo(HaveOccurred())
 
 	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))

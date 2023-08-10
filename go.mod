@@ -1,6 +1,6 @@
 module github.com/afritzler/ceph-e2e
 
-go 1.21.0
+go 1.21
 
 require (
 	github.com/onmetal/cephlet v0.0.0-20230807071416-21deb341ffec

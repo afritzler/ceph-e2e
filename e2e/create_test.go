@@ -14,8 +14,8 @@ var _ = Describe("Create Volume", func() {
 		Expect(resp.VolumeClasses).To(Equal([]v1alpha1.VolumeClass{{
 			Name: "foo",
 			Capabilities: &v1alpha1.VolumeClassCapabilities{
-				Tps:  10,
-				Iops: 10,
+				Tps:  100,
+				Iops: 100,
 			},
 		}}))
 	})
