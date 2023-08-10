@@ -101,6 +101,15 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 					StorageBytes: 1024 * 1024 * 1024,
 				},
 			},
+			Status: &v1alpha1.VolumeStatus{
+				State: v1alpha1.VolumeState_VOLUME_AVAILABLE,
+				Access: &v1alpha1.VolumeAccess{
+					Driver:     "",
+					Handle:     "",
+					Attributes: nil,
+					SecretData: nil,
+				},
+			},
 		},
 	}))
 })
