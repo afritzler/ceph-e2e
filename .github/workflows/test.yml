@@ -83,38 +83,44 @@ jobs:
             name: my-cluster
             namespace: rook-ceph
           spec:
-            dataDirHostPath: /var/lib/rook
             cephVersion:
-              image: quay.io/ceph/ceph:v18
               allowUnsupported: true
-            mon:
-              count: 1
-              allowMultiplePerNode: true
-            mgr:
-              count: 1
-              allowMultiplePerNode: true
-            dashboard:
-              enabled: true
+              image: quay.io/ceph/ceph:v17
+            cleanupPolicy:
+              sanitizeDisks: {}
             crashCollector:
               disable: true
-            storage:
-              useAllNodes: true
-              useAllDevices: true
-              #deviceFilter:
-            monitoring:
-              enabled: false
-            network:
-              hostNetwork: true
+            dashboard:
+              enabled: true
+            dataDirHostPath: /var/lib/rook
+            disruptionManagement:
+              managePodBudgets: true
+            external: {}
             healthCheck:
               daemonHealth:
                 mon:
                   interval: 45s
                   timeout: 600s
+                osd: {}
+                status: {}
+            logCollector: {}
+            mgr:
+              allowMultiplePerNode: true
+              count: 1
+            mon:
+              allowMultiplePerNode: true
+              count: 1
+            monitoring: {}
+            network:
+              hostNetwork: true
             priorityClassNames:
               all: system-node-critical
               mgr: system-cluster-critical
-            disruptionManagement:
-              managePodBudgets: true
+            security:
+              kms: {}
+            storage:
+              useAllDevices: true
+              useAllNodes: true
           ---
           apiVersion: ceph.rook.io/v1
           kind: CephBlockPool
