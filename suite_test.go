@@ -17,6 +17,10 @@ import (
 )
 
 func TestGRPCServer(t *testing.T) {
+	if os.Getenv("E2E_TESTS") == "true" {
+		t.Skip("Skipping test because E2E_TESTS is set to true")
+	}
+
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "GRPC Server Suite")
 }
