@@ -156,7 +156,9 @@ jobs:
           HEALTH_STATUS=$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')
           echo "CephCluster health status: $HEALTH_STATUS"
           if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
-           break
+            kubectl -n rook-ceph get pods
+            kubectl -n rook-ceph logs -l app=rook-ceph-osd-prepare
+            break
           fi
           sleep 30
           done
