@@ -21,21 +21,23 @@ func TestGRPCServer(t *testing.T) {
 		t.Skip("Skipping test because E2E_TESTS is set to true")
 	}
 
+	sConfig, rConfig := GinkgoConfiguration()
+	rConfig.FullTrace = true
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "GRPC Server Suite")
+	RunSpecs(t, "GRPC Server Suite", sConfig, rConfig)
 }
 
 var (
 	volumeClient v1alpha1.VolumeRuntimeClient
 )
 
-var _ = BeforeSuite(func() {
+var _ = BeforeEach(func() {
 	keyEncryptionKeyFile, err := os.CreateTemp(GinkgoT().TempDir(), "keyencryption")
 	Expect(err).NotTo(HaveOccurred())
 	defer func() {
 		_ = keyEncryptionKeyFile.Close()
 	}()
-	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), []byte("foofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoofoo"), 0666)).To(Succeed())
+	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), []byte("foooooooooooooooooooooooooooooooooooooooooooooooooooo"), 0666)).To(Succeed())
 
 	volumeClasses := []v1alpha1.VolumeClass{{
 		Name: "foo",
@@ -54,7 +56,6 @@ var _ = BeforeSuite(func() {
 	}()
 	Expect(os.WriteFile(keyEncryptionKeyFile.Name(), volumeClassesData, 0666)).To(Succeed())
 
-	var srvCtx context.Context
 	srvCtx, cancel := context.WithCancel(context.Background())
 	DeferCleanup(cancel)
 

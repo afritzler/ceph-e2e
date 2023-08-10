@@ -35,7 +35,7 @@ jobs:
         id: minikube
         with:
           cpus: 2
-          memory: 6000m
+          memory: 4096m
           start-args: '--disk-size=40g --extra-disks 1'
 
       - name: Add Rook repository
