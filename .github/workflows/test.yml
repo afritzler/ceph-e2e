@@ -15,6 +15,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Checkout code
+        uses: actions/checkout@v2
+
       - uses: actions/setup-go@v4
         with:
           go-version-file: 'go.mod'
@@ -40,11 +43,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install Cython==0.29.36
 
-      - name: Install ceph-client
+      - name: Cache ceph-client formula
+        id: cache-wget
+        uses: actions/cache@v2
+        with:
+          path: /usr/local/Cellar/ceph-client
+          key: ceph-client-${{ runner.os }}-${{ steps.get-date.outputs.date }}
+          restore-keys: |
+            ceph-client-${{ runner.os }}-
+
+      - name: Install ceph-client if not cached
+        if: steps.cache-ceph-client.outputs.cache-hit != 'true'
         run: |
           sudo chown -R ${USER}:staff /usr/local/opt/
           brew tap afritzler/ceph-client
           brew install ceph-client
+
+      - name: Get current date
+        id: get-date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
 
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
