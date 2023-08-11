@@ -25,25 +25,31 @@ jobs:
         with:
           version: 'v3.12.2'
 
-      - name: Install Homebrew
-        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
 
-      - name: Activate virtual environment and install dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install Cython==0.29.36
+          pip install Cython==0.29.36 sphinx
 
-      - name: Install ceph-client
+      - name: Install Homebrew
+        run: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+      - name: Install dependencies
         run: |
-          mkdir -p /usr/local/opt/cython/libexec
-          sudo chown -R ${USER} /usr/local/opt/cython
-          brew tap afritzler/ceph-client
-          brew install ceph-client
+          brew install boost cmake openssl snappy leveldb rocksdb ccache gperftools talloc
+
+      - name: Build and install ceph-client
+        run: |
+          git clone https://github.com/ceph/ceph.git && cd ceph
+          git checkout tags/v17.2.6
+          git submodule update --init --recursive
+          ./do_freebsd.sh
+          cd build
+          ninja
 
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
