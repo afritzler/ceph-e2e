@@ -18,6 +18,7 @@ import (
 )
 
 func TestGRPCServer(t *testing.T) {
+	// TODO: checkout ginkgo labels for conditional runs
 	if os.Getenv("E2E_TESTS") != "true" {
 		t.Skip("Skipping test because E2E_TESTS is set to true")
 	}
