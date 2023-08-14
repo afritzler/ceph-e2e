@@ -196,12 +196,26 @@ jobs:
           done
           echo "CephCluster is in acceptable state!"
 
-      - name: Wait for CephCluster to become ready
+      - name: Get operator logs
         run: |
-          kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
-          kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
-          kubectl -n rook-ceph logs -l app=rook-ceph-operator
-          kubectl wait --for=condition=ready --timeout=1200s cephblockpool -n rook-ceph cephlet-pool
+          echo "Waiting for CephBlockPool to become ready ..."
+          end=$((SECONDS+20))  # 20 seconds timeout
+          while [ $SECONDS -lt $end ]; do
+            POLL_STATUS=$(kubectl -n rook-ceph get cephblockpool cephlet-pool -o jsonpath='{.status.phase}')
+            if [[ "$POLL_STATUS" == "Ready" ]]; then
+              break
+            fi
+            kubectl -n rook-ceph logs -l app=rook-ceph-operator
+            sleep 30
+          done
+          echo "CephBlockPool is in ready state!"
+
+#      - name: Wait for CephCluster to become ready
+#        run: |
+#          kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
+#          kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
+#          kubectl -n rook-ceph logs -l app=rook-ceph-operator
+#          kubectl wait --for=condition=ready --timeout=1200s cephblockpool -n rook-ceph cephlet-pool
 
       - name: Set Environment Variables
         run: |
