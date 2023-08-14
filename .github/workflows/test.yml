@@ -34,9 +34,8 @@ jobs:
       - name: Install Homebrew dependencies
         run: |
           brew update
-          brew install qemu
           brew install --cask macfuse
-          brew install doxygen python
+          brew install qemu doxygen python
 
       - name: Install dependencies
         run: |
@@ -67,10 +66,10 @@ jobs:
         uses: medyagh/setup-minikube@latest
         id: minikube
         with:
-          cpus: 3
-          memory: 8000m
+          cpus: 2
+          memory: 6000m
           cni: bridge
-          start-args: '--disk-size=40g --extra-disks 1 --driver qemu'
+          start-args: '--disk-size=10g --extra-disks 1 --driver qemu'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -202,7 +201,7 @@ jobs:
           kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
           kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
           kubectl -n rook-ceph logs -l app=rook-ceph-operator
-          kubectl wait --for=condition=ready --timeout=600s cephblockpool -n rook-ceph cephlet-pool
+          kubectl wait --for=condition=ready --timeout=1200s cephblockpool -n rook-ceph cephlet-pool
 
       - name: Set Environment Variables
         run: |
