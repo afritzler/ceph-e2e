@@ -196,7 +196,7 @@ jobs:
           done
           echo "CephCluster is in acceptable state!"
 
-      - name: Get operator logs
+      - name: Wait for CephBlockPool to be ready
         run: |
           echo "Waiting for CephBlockPool to become ready ..."
           end=$((SECONDS+20))  # 20 seconds timeout
@@ -223,7 +223,9 @@ jobs:
           echo "CEPH_POOLNAME=cephlet-pool" >> $GITHUB_ENV
           echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
           keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
-          echo "CEPH_KEY=$keyring" >> $GITHUB_ENV
+          echo $keyring > $(PWD)/keyring
+          echo $keyring
+          echo "CEPH_KEYRING_FILENAME=$(PWD)/keyring" >> $GITHUB_ENV
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
           echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')" >> $GITHUB_ENV
 

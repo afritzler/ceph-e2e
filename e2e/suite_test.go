@@ -65,7 +65,7 @@ var _ = BeforeEach(func() {
 		Ceph: app.CephOptions{
 			Monitors:             os.Getenv("CEPH_MONITORS"),
 			User:                 os.Getenv("CEPH_USERNAME"),
-			KeyFile:              os.Getenv("CEPH_KEY"),
+			KeyringFile:          os.Getenv("CEPH_KEYRING_FILENAME"),
 			Pool:                 os.Getenv("CEPH_POOLNAME"),
 			Client:               os.Getenv("CEPH_CLIENTNAME"),
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
