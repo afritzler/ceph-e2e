@@ -223,7 +223,7 @@ jobs:
           echo "CEPH_POOLNAME=cephlet-pool" >> $GITHUB_ENV
           echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
           keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
-          echo $keyring > $(PWD)/keyring
+          echo $keyring | base64 -d > $(PWD)/keyring
           echo $keyring
           echo "CEPH_KEYRING_FILENAME=$(PWD)/keyring" >> $GITHUB_ENV
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
