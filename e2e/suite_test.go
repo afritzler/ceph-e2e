@@ -92,4 +92,19 @@ var _ = BeforeEach(func() {
 
 	volumeClient = v1alpha1.NewVolumeRuntimeClient(conn)
 	DeferCleanup(conn.Close)
+
+	Eventually(func() (bool, error) {
+		return isSocketAvailable(opts.Address)
+	}, "5s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
 })
+
+func isSocketAvailable(socketPath string) (bool, error) {
+	fileInfo, err := os.Stat(socketPath)
+	if err != nil {
+		return false, err
+	}
+	if fileInfo.Mode()&os.ModeSocket != 0 {
+		return true, nil
+	}
+	return false, nil
+}
