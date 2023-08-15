@@ -10,6 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"os"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"testing"
 	"time"
 
@@ -32,6 +34,8 @@ var (
 )
 
 var _ = BeforeEach(func() {
+	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
+
 	keyEncryptionKeyFile, err := os.CreateTemp(GinkgoT().TempDir(), "keyencryption")
 	Expect(err).NotTo(HaveOccurred())
 	defer func() {
@@ -71,7 +75,14 @@ var _ = BeforeEach(func() {
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
 		},
 	}
-	Expect(app.Run(srvCtx, opts)).To(Succeed())
+
+	go func() {
+		defer GinkgoRecover()
+		Expect(app.Run(srvCtx, opts)).To(Succeed())
+	}()
+
+	//TODO: fix later
+	time.Sleep(10 * time.Second)
 
 	address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
 	Expect(err).NotTo(HaveOccurred())
