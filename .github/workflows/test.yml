@@ -1,9 +1,10 @@
-name: e2e tests
+name: Run e2e tests
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+    types: [labeled, synchronize, reopened]
+    paths-ignore:
+      - 'docs/**'
 
 jobs:
   e2e-tests:
@@ -33,7 +34,8 @@ jobs:
         with:
           cpus: 2
           memory: 6000m
-          start-args: '--disk-size=40g --extra-disks 1'
+          addons:
+            - storage-provisioner
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
