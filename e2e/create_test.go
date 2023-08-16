@@ -11,7 +11,7 @@ var _ = Describe("Create Volume", func() {
 	It("should get the supported volume classes", func(ctx SpecContext) {
 		resp, err := volumeClient.ListVolumeClasses(ctx, &v1alpha1.ListVolumeClassesRequest{})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(resp.VolumeClasses).To(Equal([]v1alpha1.VolumeClass{{
+		Expect(resp.VolumeClasses).To(Equal([]*v1alpha1.VolumeClass{{
 			Name: "foo",
 			Capabilities: &v1alpha1.VolumeClassCapabilities{
 				Tps:  100,
@@ -35,27 +35,22 @@ var _ = Describe("Create Volume", func() {
 			},
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(createResp).To(Equal(v1alpha1.CreateVolumeResponse{
-			Volume: &v1alpha1.Volume{
-				Metadata: &v1alpha12.ObjectMetadata{
-					Id: "foo",
-				},
-				Spec: &v1alpha1.VolumeSpec{
-					Class: "foo",
-					Resources: &v1alpha1.VolumeResources{
-						StorageBytes: 1024 * 1024 * 1024,
-					},
-				},
-				Status: &v1alpha1.VolumeStatus{
-					State: v1alpha1.VolumeState_VOLUME_AVAILABLE,
-					Access: &v1alpha1.VolumeAccess{
-						Driver:     "",
-						Handle:     "",
-						Attributes: nil,
-						SecretData: nil,
-					},
-				},
+		Expect(createResp).Should(SatisfyAll(
+			HaveField("Volume.Metadata.Id", Not(BeEmpty())),
+			HaveField("Volume.Spec.Image", Equal("")),
+			HaveField("Volume.Spec.Class", Equal("foo")),
+			HaveField("Volume.Spec.Resources.StorageBytes", Equal(uint64(1024*1024*1024))),
+			HaveField("Volume.Spec.Encryption", BeNil()),
+			HaveField("Volume.Status.State", Equal(v1alpha1.VolumeState_VOLUME_PENDING)),
+			HaveField("Volume.Status.Access", BeNil()),
+		))
+
+		resp, err := volumeClient.ListVolumes(ctx, &v1alpha1.ListVolumesRequest{
+			Filter: &v1alpha1.VolumeFilter{
+				Id: createResp.Volume.Metadata.Id,
 			},
-		}))
+		})
+
+		Expect(resp.Volumes).NotTo(BeEmpty())
 	})
 })

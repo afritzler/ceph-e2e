@@ -81,8 +81,9 @@ var _ = BeforeEach(func() {
 		Expect(app.Run(srvCtx, opts)).To(Succeed())
 	}()
 
-	//TODO: fix later
-	time.Sleep(10 * time.Second)
+	Eventually(func() (bool, error) {
+		return isSocketAvailable(opts.Address)
+	}, "30s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
 
 	address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
 	Expect(err).NotTo(HaveOccurred())
@@ -92,10 +93,6 @@ var _ = BeforeEach(func() {
 
 	volumeClient = v1alpha1.NewVolumeRuntimeClient(conn)
 	DeferCleanup(conn.Close)
-
-	Eventually(func() (bool, error) {
-		return isSocketAvailable(opts.Address)
-	}, "5s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
 })
 
 func isSocketAvailable(socketPath string) (bool, error) {

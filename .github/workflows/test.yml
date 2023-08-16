@@ -160,7 +160,6 @@ jobs:
             name: cephlet-pool
             namespace: rook-ceph
           spec:
-            name: .mgr
             erasureCoded:
               codingChunks: 0
               dataChunks: 0
