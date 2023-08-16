@@ -9,6 +9,8 @@ on:
 jobs:
   e2e-tests:
     runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'e2e-tests')
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -34,8 +36,7 @@ jobs:
         with:
           cpus: 2
           memory: 6000m
-          addons:
-            - storage-provisioner
+          addons: storage-provisioner
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -165,4 +166,4 @@ jobs:
           echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')"
 
       - name: Run tests
-        run: CGO=1 go test ./...
+        run: E2E_TEST=true CGO=1 go test ./...
