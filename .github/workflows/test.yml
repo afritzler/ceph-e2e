@@ -35,7 +35,7 @@ jobs:
         run: |
           brew update
           brew install --cask macfuse
-          brew install qemu doxygen python
+          brew install qemu doxygen python minikube
 
       - name: Install dependencies
         run: |
@@ -63,13 +63,18 @@ jobs:
         run: echo "::set-output name=date::$(date +'%Y-%m-%d')"
 
       - name: Start minikube
-        uses: medyagh/setup-minikube@latest
-        id: minikube
-        with:
-          cpus: 2
-          memory: 6000m
-          cni: bridge
-          start-args: '--disk-size=10g --extra-disks 1 --driver qemu'
+        run: |
+          minikube start --disk-size=10g --extra-disks 1 --driver qemu
+          kubectl get node -o wide
+
+#      - name: Start minikube
+#        uses: medyagh/setup-minikube@latest
+#        id: minikube
+#        with:
+#          cpus: 2
+#          memory: 6000m
+#          cni: bridge
+#          start-args: '--disk-size=10g --extra-disks 1 --driver qemu'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -207,6 +212,7 @@ jobs:
             kubectl -n rook-ceph logs -l app=rook-ceph-operator
             sleep 30
           done
+          kubectl -n rook-ceph get cephblockpool,cephcluster,pod
           echo "CephBlockPool is in ready state!"
 
 #      - name: Wait for CephCluster to become ready
