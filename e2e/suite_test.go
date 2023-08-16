@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
+	"github.com/onmetal/cephlet/pkg/ceph"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
 	"github.com/onmetal/onmetal-api/ori/remote/volume"
 	"google.golang.org/grpc"
@@ -34,6 +35,9 @@ var (
 )
 
 var _ = BeforeEach(func() {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	DeferCleanup(cancel)
+
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	keyEncryptionKeyFile, err := os.CreateTemp(GinkgoT().TempDir(), "keyencryption")
@@ -81,6 +85,29 @@ var _ = BeforeEach(func() {
 		Expect(app.Run(srvCtx, opts)).To(Succeed())
 	}()
 
+	key, err := ceph.GetKeyFromKeyring(opts.Ceph.KeyringFile)
+	Expect(err).NotTo(HaveOccurred())
+
+	file, err := os.CreateTemp(GinkgoT().TempDir(), "key")
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(file.Close)
+
+	_, err = file.WriteString(key)
+	Expect(err).NotTo(HaveOccurred())
+
+	opts.Ceph.KeyFile = file.Name()
+
+	conn, err := ceph.ConnectToRados(ctx, ceph.Credentials{
+		Monitors: os.Getenv("CEPH_MONITORS"),
+		User:     "admin",
+		Keyfile:  opts.Ceph.KeyFile,
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	names, err := conn.ListPools()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(len(names)).To(Equal(1))
+
 	Eventually(func() (bool, error) {
 		return isSocketAvailable(opts.Address)
 	}, "30s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
@@ -88,11 +115,11 @@ var _ = BeforeEach(func() {
 	address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
 	Expect(err).NotTo(HaveOccurred())
 
-	conn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	gconn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	Expect(err).NotTo(HaveOccurred())
 
-	volumeClient = v1alpha1.NewVolumeRuntimeClient(conn)
-	DeferCleanup(conn.Close)
+	volumeClient = v1alpha1.NewVolumeRuntimeClient(gconn)
+	DeferCleanup(gconn.Close)
 })
 
 func isSocketAvailable(socketPath string) (bool, error) {
