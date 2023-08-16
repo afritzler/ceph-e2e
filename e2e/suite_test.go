@@ -64,7 +64,7 @@ var _ = BeforeEach(func() {
 	DeferCleanup(cancel)
 
 	opts := app.Options{
-		Address:                    "/var/run/cephlet-volume.sock",
+		Address:                    fmt.Sprintf("%s/cephlet-volume.sock", os.Getenv("PWD")),
 		PathSupportedVolumeClasses: volumeClassesFile.Name(),
 		Ceph: app.CephOptions{
 			Monitors:             os.Getenv("CEPH_MONITORS"),
