@@ -36,6 +36,9 @@ jobs:
           brew update
           brew install --cask macfuse
           brew install qemu doxygen python minikube
+          brew install socket_vmnet
+          brew tap homebrew/services
+          HOMEBREW=$(which brew) && sudo ${HOMEBREW} services start socket_vmnet
 
       - name: Install dependencies
         run: |
@@ -64,7 +67,7 @@ jobs:
 
       - name: Start minikube
         run: |
-          minikube start --disk-size=10g --extra-disks 1 --driver qemu
+          minikube start --disk-size=10g --extra-disks 1 --driver qemu --network socket_vmnet
           kubectl get node -o wide
 
 #      - name: Start minikube
