@@ -76,6 +76,7 @@ jobs:
               bluefs_buffered_io = false
               mon_data_avail_warn = 10
           ---
+          apiVersion: ceph.rook.io/v1
           kind: CephCluster
           metadata:
             name: rook-ceph
@@ -222,15 +223,41 @@ jobs:
         run: |
           echo "Waiting for CephCluster to be healthy or in warning status..."
           while true; do
-          kubectl -n rook-ceph get pods 
-          HEALTH_STATUS=$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')
-          echo "CephCluster health status: $HEALTH_STATUS"
-          if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
-           break
-          fi
-          sleep 30
+            kubectl -n rook-ceph get pods 
+            kubectl -n rook-ceph get pv,pvc
+            kubectl -n rook-ceph logs -l app=rook-ceph-operator
+            HEALTH_STATUS=$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')
+            echo "CephCluster health status: $HEALTH_STATUS"
+            if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
+              kubectl -n rook-ceph get pods
+              kubectl -n rook-ceph logs -l app=rook-ceph-osd-prepare
+              break
+            fi
+            sleep 10
           done
           echo "CephCluster is in acceptable state!"
+
+      - name: Wait for CephBlockPool to be ready
+        run: |
+          echo "Waiting for CephBlockPool to become ready ..."
+          end=$((SECONDS+20))  # 20 seconds timeout
+          while [ $SECONDS -lt $end ]; do
+            POLL_STATUS=$(kubectl -n rook-ceph get cephblockpool cephlet-pool -o jsonpath='{.status.phase}')
+            if [[ "$POLL_STATUS" == "Ready" ]]; then
+              break
+            fi
+            kubectl -n rook-ceph logs -l app=rook-ceph-operator
+            sleep 10
+          done
+          kubectl -n rook-ceph get cephblockpool,cephcluster,pod
+          echo "CephBlockPool is in ready state!"
+
+      #      - name: Wait for CephCluster to become ready
+      #        run: |
+      #          kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
+      #          kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
+      #          kubectl -n rook-ceph logs -l app=rook-ceph-operator
+      #          kubectl wait --for=condition=ready --timeout=1200s cephblockpool -n rook-ceph cephlet-pool
 
       - name: Set Environment Variables
         run: |
@@ -238,11 +265,11 @@ jobs:
           echo "CEPH_POOLNAME=cephlet-pool" >> $GITHUB_ENV
           echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
           keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
-          echo "CEPH_KEY=$keyring" >> $GITHUB_ENV
-          echo "CEPH_KEY=$keyring"
+          echo $keyring | base64 -d > $(PWD)/keyring
+          echo $keyring
+          echo "CEPH_KEYRING_FILENAME=$(PWD)/keyring" >> $GITHUB_ENV
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
           echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')" >> $GITHUB_ENV
-          echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')"
 
       - name: Run tests
-        run: E2E_TEST=true CGO=1 go test ./...
+        run: E2E_TESTS=true CGO=1 go test ./...
