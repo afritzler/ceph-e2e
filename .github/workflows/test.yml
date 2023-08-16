@@ -76,42 +76,121 @@ jobs:
               bluefs_buffered_io = false
               mon_data_avail_warn = 10
           ---
-          apiVersion: ceph.rook.io/v1
           kind: CephCluster
           metadata:
-            name: my-cluster
-            namespace: rook-ceph
+            name: rook-ceph
+            namespace: rook-ceph # namespace:cluster
           spec:
             dataDirHostPath: /var/lib/rook
-            cephVersion:
-              image: quay.io/ceph/ceph:v18
-              allowUnsupported: true
             mon:
               count: 1
-              allowMultiplePerNode: true
+              allowMultiplePerNode: false
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: default
+                  resources:
+                    requests:
+                      storage: 10Gi
+            cephVersion:
+              image: quay.io/ceph/ceph:v17.2.6
+              allowUnsupported: false
+            skipUpgradeChecks: false
+            continueUpgradeAfterChecksEvenIfNotHealthy: false
             mgr:
               count: 1
-              allowMultiplePerNode: true
+              modules:
+                - name: pg_autoscaler
+                  enabled: true
             dashboard:
               enabled: true
+              ssl: true
             crashCollector:
-              disable: true
+              disable: false
+            logCollector:
+              enabled: true
+              periodicity: daily # one of: hourly, daily, weekly, monthly
+              maxLogSize: 500M # SUFFIX may be 'M' or 'G'. Must be at least 1M.
             storage:
-              useAllNodes: true
-              useAllDevices: true
-              #deviceFilter:
-            monitoring:
-              enabled: false
-            healthCheck:
-              daemonHealth:
-                mon:
-                  interval: 45s
-                  timeout: 600s
+              storageClassDeviceSets:
+                - name: set1
+                  count: 1
+                  portable: false
+                  tuneDeviceClass: false
+                  tuneFastDeviceClass: false
+                  encrypted: false
+                  placement:
+                    topologySpreadConstraints:
+                      - maxSkew: 1
+                        topologyKey: kubernetes.io/hostname
+                        whenUnsatisfiable: ScheduleAnyway
+                        labelSelector:
+                          matchExpressions:
+                            - key: app
+                              operator: In
+                              values:
+                                - rook-ceph-osd
+                  preparePlacement:
+                    podAntiAffinity:
+                      preferredDuringSchedulingIgnoredDuringExecution:
+                        - weight: 100
+                          podAffinityTerm:
+                            labelSelector:
+                              matchExpressions:
+                                - key: app
+                                  operator: In
+                                  values:
+                                    - rook-ceph-osd
+                                - key: app
+                                  operator: In
+                                  values:
+                                    - rook-ceph-osd-prepare
+                            topologyKey: kubernetes.io/hostname
+                    topologySpreadConstraints:
+                      - maxSkew: 1
+                        topologyKey: topology.kubernetes.io/zone
+                        whenUnsatisfiable: DoNotSchedule
+                        labelSelector:
+                          matchExpressions:
+                            - key: app
+                              operator: In
+                              values:
+                                - rook-ceph-osd-prepare
+                  resources:
+                  # These are the OSD daemon limits. For OSD prepare limits, see the separate section below for "prepareosd" resources
+                  #   limits:
+                  #     cpu: "500m"
+                  #     memory: "4Gi"
+                  #   requests:
+                  #     cpu: "500m"
+                  #     memory: "4Gi"
+                  volumeClaimTemplates:
+                    - metadata:
+                        name: data
+                      spec:
+                        resources:
+                          requests:
+                            storage: 10Gi
+                        storageClassName: default
+                        volumeMode: Block
+                        accessModes:
+                          - ReadWriteOnce
+              onlyApplyOSDPlacement: false
+            resources:
+            #  prepareosd:
+            #    limits:
+            #      cpu: "200m"
+            #      memory: "200Mi"
+            #   requests:
+            #      cpu: "200m"
+            #      memory: "200Mi"
             priorityClassNames:
-              all: system-node-critical
+              mon: system-node-critical
+              osd: system-node-critical
               mgr: system-cluster-critical
             disruptionManagement:
               managePodBudgets: true
+              osdMaintenanceTimeout: 30
+              pgHealthCheckTimeout: 0
           ---
           apiVersion: ceph.rook.io/v1
           kind: CephBlockPool
