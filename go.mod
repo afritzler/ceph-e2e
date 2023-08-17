@@ -3,7 +3,8 @@ module github.com/afritzler/ceph-e2e
 go 1.21.0
 
 require (
-	github.com/onmetal/cephlet v0.0.0-20230807071416-21deb341ffec
+	github.com/ceph/go-ceph v0.23.0
+	github.com/onmetal/cephlet v0.0.0-20230817075811-5060375c0b64
 	github.com/onmetal/onmetal-api v0.1.2-0.20230706225717-3f3c3abf2428
 	github.com/onsi/ginkgo/v2 v2.11.0
 	github.com/onsi/gomega v1.27.10
@@ -22,13 +23,12 @@ require (
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230106234847-43070de90fa1 // indirect
 	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/ceph/go-ceph v0.22.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/containerd/containerd v1.7.3 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.3 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/docker/cli v23.0.3+incompatible // indirect
-	github.com/docker/distribution v2.8.1+incompatible // indirect
+	github.com/docker/distribution v2.8.2+incompatible // indirect
 	github.com/docker/docker v23.0.4+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect

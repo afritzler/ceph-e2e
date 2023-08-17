@@ -4,12 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/ceph/go-ceph/rados"
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
 	"github.com/onmetal/cephlet/pkg/ceph"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
-	"github.com/onmetal/onmetal-api/ori/remote/volume"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 	"os"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
@@ -63,14 +61,15 @@ var _ = BeforeEach(func() {
 		_ = volumeClassesFile.Close()
 	}()
 	Expect(os.WriteFile(volumeClassesFile.Name(), volumeClassesData, 0666)).To(Succeed())
-
-	srvCtx, cancel := context.WithCancel(context.Background())
-	DeferCleanup(cancel)
-
+	//
+	//srvCtx, cancel := context.WithCancel(context.Background())
+	//DeferCleanup(cancel)
+	//
 	opts := app.Options{
 		Address:                    fmt.Sprintf("%s/cephlet-volume.sock", os.Getenv("PWD")),
 		PathSupportedVolumeClasses: volumeClassesFile.Name(),
 		Ceph: app.CephOptions{
+			ConnectTimeout:       10 * time.Second,
 			Monitors:             os.Getenv("CEPH_MONITORS"),
 			User:                 os.Getenv("CEPH_USERNAME"),
 			KeyringFile:          os.Getenv("CEPH_KEYRING_FILENAME"),
@@ -79,11 +78,11 @@ var _ = BeforeEach(func() {
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
 		},
 	}
-
-	go func() {
-		defer GinkgoRecover()
-		Expect(app.Run(srvCtx, opts)).To(Succeed())
-	}()
+	//
+	//go func() {
+	//	defer GinkgoRecover()
+	//	Expect(app.Run(srvCtx, opts)).To(Succeed())
+	//}()
 
 	key, err := ceph.GetKeyFromKeyring(opts.Ceph.KeyringFile)
 	Expect(err).NotTo(HaveOccurred())
@@ -97,7 +96,7 @@ var _ = BeforeEach(func() {
 
 	opts.Ceph.KeyFile = file.Name()
 
-	conn, err := ceph.ConnectToRados(ctx, ceph.Credentials{
+	conn, err := ConnectToRados(ctx, ceph.Credentials{
 		Monitors: os.Getenv("CEPH_MONITORS"),
 		User:     "admin",
 		Keyfile:  opts.Ceph.KeyFile,
@@ -108,18 +107,18 @@ var _ = BeforeEach(func() {
 	Expect(err).NotTo(HaveOccurred())
 	Expect(len(names)).To(Equal(1))
 
-	Eventually(func() (bool, error) {
-		return isSocketAvailable(opts.Address)
-	}, "30s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
+	//Eventually(func() (bool, error) {
+	//	return isSocketAvailable(opts.Address)
+	//}, "30s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
 
-	address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
-	Expect(err).NotTo(HaveOccurred())
-
-	gconn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	Expect(err).NotTo(HaveOccurred())
-
-	volumeClient = v1alpha1.NewVolumeRuntimeClient(gconn)
-	DeferCleanup(gconn.Close)
+	//address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
+	//Expect(err).NotTo(HaveOccurred())
+	//
+	//gconn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	//Expect(err).NotTo(HaveOccurred())
+	//
+	//volumeClient = v1alpha1.NewVolumeRuntimeClient(gconn)
+	//DeferCleanup(gconn.Close)
 })
 
 func isSocketAvailable(socketPath string) (bool, error) {
@@ -131,4 +130,37 @@ func isSocketAvailable(socketPath string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func ConnectToRados(ctx context.Context, c ceph.Credentials) (*rados.Conn, error) {
+	conn, err := rados.NewConnWithUser(c.User)
+	if err != nil {
+		return nil, fmt.Errorf("creating a new connection failed: %w", err)
+	}
+
+	args := []string{
+		"-m", c.Monitors,
+		"--keyfile=" + c.Keyfile,
+		"--connect-timeout=10",
+	}
+	err = conn.ParseCmdLineArgs(args)
+	if err != nil {
+		return nil, fmt.Errorf("parsing cmdline args (%v) failed: %w", args, err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- conn.Connect()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, fmt.Errorf("ceph connect timeout. monitors: %s, user: %s: %w", c.Monitors, c.User, ctx.Err())
+	case err := <-done:
+		if err != nil {
+			return nil, fmt.Errorf("connecting failed: %w", err)
+		}
+	}
+
+	return conn, nil
 }

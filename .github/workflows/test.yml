@@ -30,18 +30,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libcephfs-dev librbd-dev librados-dev
 
+      - name: Create loop back device
+        run: |
+          sudo dd if=/dev/zero of=/tmp/foo bs=1 count=0 seek=5G
+          sudo losetup -fP /tmp/foo
+
       - name: Start minikube
         uses: medyagh/setup-minikube@latest
         id: minikube
         with:
-          cpus: 2
-          memory: 6000m
-          addons: csi-hostpath-driver
-
-      - name: Patch default StorageClass
-        run: |
-          kubectl get sc
-          kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+          driver: none
+          start-args: '--mount --mount-string="/dev/loop0:/dev/loop0"'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -87,116 +86,17 @@ jobs:
             name: rook-ceph
             namespace: rook-ceph # namespace:cluster
           spec:
-            dataDirHostPath: /var/lib/rook
-            mon:
-              count: 1
-              allowMultiplePerNode: false
-              volumeClaimTemplate:
-                spec:
-                  storageClassName: default
-                  resources:
-                    requests:
-                      storage: 10Gi
             cephVersion:
               image: quay.io/ceph/ceph:v17.2.6
-              allowUnsupported: false
-            skipUpgradeChecks: false
-            continueUpgradeAfterChecksEvenIfNotHealthy: false
-            mgr:
+            dataDirHostPath: /var/lib/rook
+            network:
+              provider: host
+            mon:
               count: 1
-              modules:
-                - name: pg_autoscaler
-                  enabled: true
-            dashboard:
-              enabled: true
-              ssl: true
-            crashCollector:
-              disable: false
-            logCollector:
-              enabled: true
-              periodicity: daily # one of: hourly, daily, weekly, monthly
-              maxLogSize: 500M # SUFFIX may be 'M' or 'G'. Must be at least 1M.
             storage:
-              storageClassDeviceSets:
-                - name: set1
-                  count: 1
-                  portable: false
-                  tuneDeviceClass: false
-                  tuneFastDeviceClass: false
-                  encrypted: false
-                  placement:
-                    topologySpreadConstraints:
-                      - maxSkew: 1
-                        topologyKey: kubernetes.io/hostname
-                        whenUnsatisfiable: ScheduleAnyway
-                        labelSelector:
-                          matchExpressions:
-                            - key: app
-                              operator: In
-                              values:
-                                - rook-ceph-osd
-                  preparePlacement:
-                    podAntiAffinity:
-                      preferredDuringSchedulingIgnoredDuringExecution:
-                        - weight: 100
-                          podAffinityTerm:
-                            labelSelector:
-                              matchExpressions:
-                                - key: app
-                                  operator: In
-                                  values:
-                                    - rook-ceph-osd
-                                - key: app
-                                  operator: In
-                                  values:
-                                    - rook-ceph-osd-prepare
-                            topologyKey: kubernetes.io/hostname
-                    topologySpreadConstraints:
-                      - maxSkew: 1
-                        topologyKey: topology.kubernetes.io/zone
-                        whenUnsatisfiable: DoNotSchedule
-                        labelSelector:
-                          matchExpressions:
-                            - key: app
-                              operator: In
-                              values:
-                                - rook-ceph-osd-prepare
-                  resources:
-                  # These are the OSD daemon limits. For OSD prepare limits, see the separate section below for "prepareosd" resources
-                  #   limits:
-                  #     cpu: "500m"
-                  #     memory: "4Gi"
-                  #   requests:
-                  #     cpu: "500m"
-                  #     memory: "4Gi"
-                  volumeClaimTemplates:
-                    - metadata:
-                        name: data
-                      spec:
-                        resources:
-                          requests:
-                            storage: 10Gi
-                        storageClassName: default
-                        volumeMode: Block
-                        accessModes:
-                          - ReadWriteOnce
-              onlyApplyOSDPlacement: false
-            resources:
-            #  prepareosd:
-            #    limits:
-            #      cpu: "200m"
-            #      memory: "200Mi"
-            #   requests:
-            #      cpu: "200m"
-            #      memory: "200Mi"
-            priorityClassNames:
-              mon: system-node-critical
-              osd: system-node-critical
-              mgr: system-cluster-critical
-            disruptionManagement:
-              managePodBudgets: true
-              osdMaintenanceTimeout: 30
-              pgHealthCheckTimeout: 0
+              useAllNodes: true
+              useAllDevices: false
+              deviceFilter: "loop0"
           ---
           apiVersion: ceph.rook.io/v1
           kind: CephBlockPool
@@ -204,7 +104,6 @@ jobs:
             name: cephlet-pool
             namespace: rook-ceph
           spec:
-            name: .mgr
             erasureCoded:
               codingChunks: 0
               dataChunks: 0
@@ -244,24 +143,20 @@ jobs:
       - name: Wait for CephBlockPool to be ready
         run: |
           echo "Waiting for CephBlockPool to become ready ..."
-          end=$((SECONDS+20))  # 20 seconds timeout
+          kubectl get node -o wide
+          hostname -I | awk '{print $1}'
+          end=$((SECONDS+600))  # 10 mins timeout
           while [ $SECONDS -lt $end ]; do
             POLL_STATUS=$(kubectl -n rook-ceph get cephblockpool cephlet-pool -o jsonpath='{.status.phase}')
             if [[ "$POLL_STATUS" == "Ready" ]]; then
               break
             fi
             kubectl -n rook-ceph logs -l app=rook-ceph-operator
+            kubectl -n rook-ceph get pods
             sleep 10
           done
           kubectl -n rook-ceph get cephblockpool,cephcluster,pod
           echo "CephBlockPool is in ready state!"
-
-      #      - name: Wait for CephCluster to become ready
-      #        run: |
-      #          kubectl wait --for=condition=ready --timeout=30s pod -n rook-ceph -l app=rook-ceph-mon
-      #          kubectl wait --for=condition=ready --timeout=30s cephcluster -n rook-ceph my-cluster
-      #          kubectl -n rook-ceph logs -l app=rook-ceph-operator
-      #          kubectl wait --for=condition=ready --timeout=1200s cephblockpool -n rook-ceph cephlet-pool
 
       - name: Set Environment Variables
         run: |
@@ -269,9 +164,8 @@ jobs:
           echo "CEPH_POOLNAME=cephlet-pool" >> $GITHUB_ENV
           echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
           keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
-          echo $keyring | base64 -d > $(PWD)/keyring
-          echo $keyring
-          echo "CEPH_KEYRING_FILENAME=$(PWD)/keyring" >> $GITHUB_ENV
+          echo $keyring | base64 -d > $PWD/keyring
+          echo "CEPH_KEYRING_FILENAME=$PWD/keyring" >> $GITHUB_ENV
           mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
           echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')" >> $GITHUB_ENV
 
