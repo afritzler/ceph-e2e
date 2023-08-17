@@ -15,159 +15,63 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-python@v4
         with:
-          go-version-file: 'go.mod'
+          python-version: '3.8'
 
-      - uses: azure/setup-kubectl@v3
-
-      - uses: azure/setup-helm@v3
-        with:
-          version: 'v3.12.2'
-
-      - name: Update APT and install ceph libs
+      - name: Update system and install required packages
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libcephfs-dev librbd-dev librados-dev
+          sudo pip3 install git+https://github.com/ceph/ceph-deploy.git
 
-      - name: Create loop back device
+      - name: Create loopback device for OSD
         run: |
-          sudo dd if=/dev/zero of=/tmp/foo bs=1 count=0 seek=5G
-          sudo losetup -fP /tmp/foo
+          sudo dd if=/dev/zero of=/tmp/loopback.img bs=1M count=5120
+          LOOP_DEVICE=$(sudo losetup --find --show /tmp/loopback.img)
+          echo "LOOP_DEVICE=${LOOP_DEVICE}" >> $GITHUB_ENV
 
-      - name: Start minikube
-        uses: medyagh/setup-minikube@latest
-        id: minikube
-        with:
-          driver: none
-          start-args: '--mount --mount-string="/dev/loop0:/dev/loop0"'
-
-      - name: Add Rook repository
-        run: helm repo add rook-release https://charts.rook.io/release
-
-      - name: Install Rook Operator
-        run: helm install --create-namespace --namespace rook-ceph rook-ceph rook-release/rook-ceph --set csi.enableRbdDriver=false --set csi.enableCephfsDriver=false
-
-      - name: Verify Rook CRDs installation
+      - name: Setup Ceph Cluster
         run: |
-          end=$((SECONDS+20))  # 20 seconds timeout
-          while [ $SECONDS -lt $end ]; do
-            if kubectl get crds | grep -q 'cephclusters.ceph.rook.io'; then
-              echo "Rook CRDs have been installed!"
-              exit 0
-            fi
-            echo "Waiting for Rook CRDs to be installed..."
-            sleep 10
-          done
+          mkdir ~/my-ceph-cluster
+          cd ~/my-ceph-cluster
+          ceph-deploy new $(hostname)
           
-          echo "Timeout waiting for Rook CRDs!"
-          exit 1
+          echo "osd pool default size = 1" >> ceph.conf
+          echo "osd crush chooseleaf type = 0" >> ceph.conf
+          echo "osd pool default pg num = 128" >> ceph.conf
+          echo "osd pool default pgp num = 128" >> ceph.conf
+          
+          ceph-deploy install $(hostname)
+          ceph-deploy mon create-initial
+          ceph-deploy osd create $(hostname):${LOOP_DEVICE}
 
-      - name: Apply CephCluster configuration
+      - name: Create a Ceph Block Pool and Client Secrets
         run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: ConfigMap
-          metadata:
-            name: rook-config-override
-            namespace: rook-ceph
-          data:
-            config: |
-              [global]
-              osd_pool_default_size = 1
-              mon_warn_on_pool_no_redundancy = false
-              bdev_flock_retry = 20
-              bluefs_buffered_io = false
-              mon_data_avail_warn = 10
-          ---
-          apiVersion: ceph.rook.io/v1
-          kind: CephCluster
-          metadata:
-            name: rook-ceph
-            namespace: rook-ceph # namespace:cluster
-          spec:
-            cephVersion:
-              image: quay.io/ceph/ceph:v17.2.6
-            dataDirHostPath: /var/lib/rook
-            network:
-              provider: host
-            mon:
-              count: 1
-            storage:
-              useAllNodes: true
-              useAllDevices: false
-              deviceFilter: "loop0"
-          ---
-          apiVersion: ceph.rook.io/v1
-          kind: CephBlockPool
-          metadata:
-            name: cephlet-pool
-            namespace: rook-ceph
-          spec:
-            erasureCoded:
-              codingChunks: 0
-              dataChunks: 0
-            replicated:
-              size: 1
-              requireSafeReplicaSize: false
-          ---
-          apiVersion: ceph.rook.io/v1
-          kind: CephClient
-          metadata:
-            name: cephlet-pool
-            namespace: rook-ceph
-          spec:
-            caps:
-              mgr: profile rbd pool=cephlet-pool
-              mon: profile rbd
-              osd: profile rbd pool=cephlet-pool
-          EOF
+          # Create a block pool
+          POOL_NAME=mypool
+          ceph osd pool create $POOL_NAME 128 128
 
-      - name: Wait for CephCluster to be healthy or warning
+          # Define client name and path to keyring
+          CLIENT_NAME=client.myuser
+          KEYRING_PATH=client.myuser.keyring
+
+          # Create or get a client key
+          ceph auth get-or-create $CLIENT_NAME mon 'allow r' osd "allow rwx pool=$POOL_NAME" > $KEYRING_PATH
+
+          # Extract the key and write to GITHUB_ENV
+          CLIENT_KEY=$(ceph auth get-key $CLIENT_NAME)
+          MONITOR_INFO=$(ceph mon dump | grep '^0' | awk '{print $3}')
+
+          echo "CEPH_POOL_NAME=$POOL_NAME" >> $GITHUB_ENV
+          echo "CEPH_CLIENT_NAME=$CLIENT_NAME" >> $GITHUB_ENV
+          echo "CEPH_CLIENT_SECRET=$CLIENT_KEY" >> $GITHUB_ENV
+          echo "CEPH_KEYRING_PATH=$(pwd)/$KEYRING_PATH" >> $GITHUB_ENV
+          echo "CEPH_MONITORS=$MONITOR_INFO" >> $GITHUB_ENV
+
+      - name: Check Ceph Status and Environment Variables
         run: |
-          echo "Waiting for CephCluster to be healthy or in warning status..."
-          while true; do
-            kubectl -n rook-ceph get pods 
-            kubectl -n rook-ceph get pv,pvc
-            HEALTH_STATUS=$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')
-            echo "CephCluster health status: $HEALTH_STATUS"
-            if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
-              kubectl -n rook-ceph get pods
-              kubectl -n rook-ceph logs -l app=rook-ceph-osd-prepare
-              break
-            fi
-            sleep 10
-          done
-          echo "CephCluster is in acceptable state!"
-
-      - name: Wait for CephBlockPool to be ready
-        run: |
-          echo "Waiting for CephBlockPool to become ready ..."
-          kubectl get node -o wide
-          hostname -I | awk '{print $1}'
-          end=$((SECONDS+600))  # 10 mins timeout
-          while [ $SECONDS -lt $end ]; do
-            POLL_STATUS=$(kubectl -n rook-ceph get cephblockpool cephlet-pool -o jsonpath='{.status.phase}')
-            if [[ "$POLL_STATUS" == "Ready" ]]; then
-              break
-            fi
-            kubectl -n rook-ceph logs -l app=rook-ceph-operator
-            kubectl -n rook-ceph get pods
-            sleep 10
-          done
-          kubectl -n rook-ceph get cephblockpool,cephcluster,pod
-          echo "CephBlockPool is in ready state!"
-
-      - name: Set Environment Variables
-        run: |
-          echo "CEPH_USERNAME=admin" >> $GITHUB_ENV
-          echo "CEPH_POOLNAME=cephlet-pool" >> $GITHUB_ENV
-          echo "CEPH_CLIENTNAME=client.cephlet-pool" >> $GITHUB_ENV
-          keyring=$(kubectl -n rook-ceph get secret rook-ceph-admin-keyring -o jsonpath={.data.keyring})
-          echo $keyring | base64 -d > $PWD/keyring
-          echo "CEPH_KEYRING_FILENAME=$PWD/keyring" >> $GITHUB_ENV
-          mon=$(kubectl -n rook-ceph get cm rook-ceph-mon-endpoints -o jsonpath={.data.data})
-          echo "CEPH_MONITORS=$(echo $mon | sed 's/^[^0-9[]*//')" >> $GITHUB_ENV
-
-      - name: Run tests
-        run: E2E_TESTS=true CGO=1 go test ./...
+          ceph -s
+          echo "Pool Name: $CEPH_POOL_NAME"
+          echo "Client Name: $CEPH_CLIENT_NAME"
+          echo "Client Secret: $CEPH_CLIENT_SECRET"
+          echo "Keyring Path: $CEPH_KEYRING_PATH"
+          echo "Monitors: $CEPH_MONITORS"
