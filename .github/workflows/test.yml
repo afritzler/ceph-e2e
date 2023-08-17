@@ -36,7 +36,12 @@ jobs:
         with:
           cpus: 2
           memory: 6000m
-          addons: storage-provisioner
+          addons: csi-hostpath-driver
+
+      - name: Patch default StorageClass
+        run: |
+          kubectl get sc
+          kubectl patch storageclass csi-hostpath-sc -p '{"metadata": {"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
 
       - name: Add Rook repository
         run: helm repo add rook-release https://charts.rook.io/release
@@ -225,7 +230,6 @@ jobs:
           while true; do
             kubectl -n rook-ceph get pods 
             kubectl -n rook-ceph get pv,pvc
-            kubectl -n rook-ceph logs -l app=rook-ceph-operator
             HEALTH_STATUS=$(kubectl -n rook-ceph get cephcluster -o jsonpath='{.items[0].status.ceph.health}')
             echo "CephCluster health status: $HEALTH_STATUS"
             if [[ "$HEALTH_STATUS" == "HEALTH_OK" || "$HEALTH_STATUS" == "HEALTH_WARN" ]]; then
