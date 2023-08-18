@@ -7,71 +7,45 @@ on:
       - 'docs/**'
 
 jobs:
-  e2e-tests:
+  setup-microceph:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, 'e2e-tests')
-
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v2
 
-      - uses: actions/setup-python@v4
-        with:
-          python-version: '3.8'
-
-      - name: Update system and install required packages
+      - name: Setup MicroCeph
         run: |
-          sudo pip3 install git+https://github.com/ceph/ceph-deploy.git
-
-      - name: Create loopback device for OSD
-        run: |
-          sudo dd if=/dev/zero of=/tmp/loopback.img bs=1M count=5120
-          LOOP_DEVICE=$(sudo losetup --find --show /tmp/loopback.img)
-          echo "LOOP_DEVICE=${LOOP_DEVICE}" >> $GITHUB_ENV
-
-      - name: Setup Ceph Cluster
-        run: |
-          mkdir ~/my-ceph-cluster
-          cd ~/my-ceph-cluster
-          ceph-deploy new $(hostname)
-          
-          echo "osd pool default size = 1" >> ceph.conf
-          echo "osd crush chooseleaf type = 0" >> ceph.conf
-          echo "osd pool default pg num = 128" >> ceph.conf
-          echo "osd pool default pgp num = 128" >> ceph.conf
-          
-          ceph-deploy install $(hostname)
-          ceph-deploy mon create-initial
-          ceph-deploy osd create $(hostname):${LOOP_DEVICE}
-
-      - name: Create a Ceph Block Pool and Client Secrets
-        run: |
-          # Create a block pool
-          POOL_NAME=mypool
-          ceph osd pool create $POOL_NAME 128 128
-
-          # Define client name and path to keyring
-          CLIENT_NAME=client.myuser
-          KEYRING_PATH=client.myuser.keyring
-
-          # Create or get a client key
-          ceph auth get-or-create $CLIENT_NAME mon 'allow r' osd "allow rwx pool=$POOL_NAME" > $KEYRING_PATH
-
-          # Extract the key and write to GITHUB_ENV
-          CLIENT_KEY=$(ceph auth get-key $CLIENT_NAME)
-          MONITOR_INFO=$(ceph mon dump | grep '^0' | awk '{print $3}')
-
-          echo "CEPH_POOL_NAME=$POOL_NAME" >> $GITHUB_ENV
-          echo "CEPH_CLIENT_NAME=$CLIENT_NAME" >> $GITHUB_ENV
-          echo "CEPH_CLIENT_SECRET=$CLIENT_KEY" >> $GITHUB_ENV
-          echo "CEPH_KEYRING_PATH=$(pwd)/$KEYRING_PATH" >> $GITHUB_ENV
-          echo "CEPH_MONITORS=$MONITOR_INFO" >> $GITHUB_ENV
-
-      - name: Check Ceph Status and Environment Variables
-        run: |
-          ceph -s
-          echo "Pool Name: $CEPH_POOL_NAME"
-          echo "Client Name: $CEPH_CLIENT_NAME"
-          echo "Client Secret: $CEPH_CLIENT_SECRET"
-          echo "Keyring Path: $CEPH_KEYRING_PATH"
-          echo "Monitors: $CEPH_MONITORS"
+          set -x
+          sudo apt-get install --no-install-recommends -y snapd ceph-common
+          sudo snap install microceph --edge
+          sleep 5
+          sudo microceph cluster bootstrap
+          sudo microceph.ceph config set global osd_pool_default_size 1
+          sudo microceph.ceph config set global mon_allow_pool_delete true
+          sudo microceph.ceph config set global osd_memory_target 939524096
+          sudo microceph.ceph osd crush rule rm replicated_rule
+          sudo microceph.ceph osd crush rule create-replicated replicated default osd
+          for flag in nosnaptrim noscrub nobackfill norebalance norecover noscrub nodeep-scrub; do
+              sudo microceph.ceph osd set $flag
+          done
+          # Use ephemeral disk mounted on /mnt for ceph OSD.
+          # The block-devices plug doesn't allow accessing /dev/loopX devices so we make those same devices
+          # available under alternate names (/dev/sdiY) that are not used inside GitHub Action runners.
+          sudo swapoff /mnt/swapfile
+          sudo rm -f /mnt/swapfile
+          loop_file="/mnt/ceph-osd.img"
+          sudo fallocate -l 10G "${loop_file}"
+          loop_dev="$(sudo losetup --show --direct-io=on --nooverlap -f "${loop_file}")"
+          devInfo=($(sudo stat -c '%t %T' "${loop_dev}"))
+          sudo mknod -m 0660 /dev/sdia b 0x"${devInfo[0]}" 0x"${devInfo[1]}"
+          sudo microceph disk add --wipe /dev/sdia
+          sudo rm -rf /etc/ceph
+          sudo ln -s /var/snap/microceph/current/conf/ /etc/ceph
+          sudo microceph enable rgw
+          sudo microceph.ceph osd pool create cephfs_meta 32
+          sudo microceph.ceph osd pool create cephfs_data 32
+          sudo microceph.ceph fs new cephfs cephfs_meta cephfs_data
+          sudo microceph.ceph fs ls
+          sleep 30
+          sudo microceph.ceph status
+          sudo rm -f /snap/bin/rbd
