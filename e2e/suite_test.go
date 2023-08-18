@@ -4,18 +4,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/ceph/go-ceph/rados"
+
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
-	"github.com/onmetal/cephlet/pkg/ceph"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
+	"github.com/onmetal/onmetal-api/ori/remote/volume"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"os"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"testing"
 	"time"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 )
 
 func TestGRPCServer(t *testing.T) {
@@ -33,9 +34,6 @@ var (
 )
 
 var _ = BeforeEach(func() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	DeferCleanup(cancel)
-
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	keyEncryptionKeyFile, err := os.CreateTemp(GinkgoT().TempDir(), "keyencryption")
@@ -61,10 +59,10 @@ var _ = BeforeEach(func() {
 		_ = volumeClassesFile.Close()
 	}()
 	Expect(os.WriteFile(volumeClassesFile.Name(), volumeClassesData, 0666)).To(Succeed())
-	//
-	//srvCtx, cancel := context.WithCancel(context.Background())
-	//DeferCleanup(cancel)
-	//
+
+	srvCtx, cancel := context.WithCancel(context.Background())
+	DeferCleanup(cancel)
+
 	opts := app.Options{
 		Address:                    fmt.Sprintf("%s/cephlet-volume.sock", os.Getenv("PWD")),
 		PathSupportedVolumeClasses: volumeClassesFile.Name(),
@@ -78,47 +76,24 @@ var _ = BeforeEach(func() {
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
 		},
 	}
-	//
-	//go func() {
-	//	defer GinkgoRecover()
-	//	Expect(app.Run(srvCtx, opts)).To(Succeed())
-	//}()
 
-	key, err := ceph.GetKeyFromKeyring(opts.Ceph.KeyringFile)
+	go func() {
+		defer GinkgoRecover()
+		Expect(app.Run(srvCtx, opts)).To(Succeed())
+	}()
+
+	Eventually(func() (bool, error) {
+		return isSocketAvailable(opts.Address)
+	}, "30s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
+
+	address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
 	Expect(err).NotTo(HaveOccurred())
 
-	file, err := os.CreateTemp(GinkgoT().TempDir(), "key")
-	Expect(err).NotTo(HaveOccurred())
-	DeferCleanup(file.Close)
-
-	_, err = file.WriteString(key)
+	gconn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	Expect(err).NotTo(HaveOccurred())
 
-	opts.Ceph.KeyFile = file.Name()
-
-	conn, err := ConnectToRados(ctx, ceph.Credentials{
-		Monitors: os.Getenv("CEPH_MONITORS"),
-		User:     "admin",
-		Keyfile:  opts.Ceph.KeyFile,
-	})
-	Expect(err).NotTo(HaveOccurred())
-
-	names, err := conn.ListPools()
-	Expect(err).NotTo(HaveOccurred())
-	Expect(len(names)).To(Equal(1))
-
-	//Eventually(func() (bool, error) {
-	//	return isSocketAvailable(opts.Address)
-	//}, "30s", "500ms").Should(BeTrue(), "The UNIX socket file should be available")
-
-	//address, err := volume.GetAddressWithTimeout(3*time.Second, fmt.Sprintf("unix://%s", opts.Address))
-	//Expect(err).NotTo(HaveOccurred())
-	//
-	//gconn, err := grpc.Dial(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	//Expect(err).NotTo(HaveOccurred())
-	//
-	//volumeClient = v1alpha1.NewVolumeRuntimeClient(gconn)
-	//DeferCleanup(gconn.Close)
+	volumeClient = v1alpha1.NewVolumeRuntimeClient(gconn)
+	DeferCleanup(gconn.Close)
 })
 
 func isSocketAvailable(socketPath string) (bool, error) {
@@ -130,37 +105,4 @@ func isSocketAvailable(socketPath string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-func ConnectToRados(ctx context.Context, c ceph.Credentials) (*rados.Conn, error) {
-	conn, err := rados.NewConnWithUser(c.User)
-	if err != nil {
-		return nil, fmt.Errorf("creating a new connection failed: %w", err)
-	}
-
-	args := []string{
-		"-m", c.Monitors,
-		"--keyfile=" + c.Keyfile,
-		"--connect-timeout=10",
-	}
-	err = conn.ParseCmdLineArgs(args)
-	if err != nil {
-		return nil, fmt.Errorf("parsing cmdline args (%v) failed: %w", args, err)
-	}
-
-	done := make(chan error, 1)
-	go func() {
-		done <- conn.Connect()
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, fmt.Errorf("ceph connect timeout. monitors: %s, user: %s: %w", c.Monitors, c.User, ctx.Err())
-	case err := <-done:
-		if err != nil {
-			return nil, fmt.Errorf("connecting failed: %w", err)
-		}
-	}
-
-	return conn, nil
 }
