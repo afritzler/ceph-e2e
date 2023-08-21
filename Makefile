@@ -1,0 +1,3 @@
+.PHONY: intefration-tests
+integration-tests:
+	CGO=1 go test -tags=integration ./...

@@ -1,10 +1,17 @@
-package e2e
+//go:build integration
+// +build integration
+
+package integration
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"testing"
+	"time"
 
+	"github.com/ceph/go-ceph/rados"
 	"github.com/onmetal/cephlet/ori/volume/cmd/volume/app"
 	"github.com/onmetal/onmetal-api/ori/apis/volume/v1alpha1"
 	"github.com/onmetal/onmetal-api/ori/remote/volume"
@@ -12,28 +19,24 @@ import (
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"os"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	"testing"
-	"time"
 )
 
-func TestGRPCServer(t *testing.T) {
-	// TODO: checkout ginkgo labels for conditional runs
-	if os.Getenv("E2E_TESTS") != "true" {
-		t.Skip("Skipping test because E2E_TESTS is set to true")
-	}
+var (
+	srvCtx context.Context
+	cancel context.CancelFunc
 
+	volumeClient v1alpha1.VolumeRuntimeClient
+	ioctx        *rados.IOContext
+)
+
+func TestIntegration_GRPCServer(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "GRPC Server Suite")
 }
 
-var (
-	volumeClient v1alpha1.VolumeRuntimeClient
-)
-
-var _ = BeforeEach(func() {
+var _ = BeforeSuite(func() {
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
 	keyEncryptionKeyFile, err := os.CreateTemp(GinkgoT().TempDir(), "keyencryption")
@@ -60,9 +63,6 @@ var _ = BeforeEach(func() {
 	}()
 	Expect(os.WriteFile(volumeClassesFile.Name(), volumeClassesData, 0666)).To(Succeed())
 
-	srvCtx, cancel := context.WithCancel(context.Background())
-	DeferCleanup(cancel)
-
 	opts := app.Options{
 		Address:                    fmt.Sprintf("%s/cephlet-volume.sock", os.Getenv("PWD")),
 		PathSupportedVolumeClasses: volumeClassesFile.Name(),
@@ -76,6 +76,9 @@ var _ = BeforeEach(func() {
 			KeyEncryptionKeyPath: keyEncryptionKeyFile.Name(),
 		},
 	}
+
+	srvCtx, cancel = context.WithCancel(context.Background())
+	DeferCleanup(cancel)
 
 	go func() {
 		defer GinkgoRecover()
@@ -94,6 +97,22 @@ var _ = BeforeEach(func() {
 
 	volumeClient = v1alpha1.NewVolumeRuntimeClient(gconn)
 	DeferCleanup(gconn.Close)
+
+	conn, err := rados.NewConn()
+	Expect(err).NotTo(HaveOccurred())
+
+	Expect(conn.ReadConfigFile(os.Getenv("CEPH_CONFIG_FILE"))).ToNot(HaveOccurred())
+
+	Expect(conn.Connect()).ToNot(HaveOccurred())
+	DeferCleanup(conn.Shutdown)
+
+	pools, err := conn.ListPools()
+	Expect(err).NotTo(HaveOccurred())
+	Expect(pools).To(ContainElement(opts.Ceph.Pool))
+
+	ioctx, err = conn.OpenIOContext(opts.Ceph.Pool)
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(ioctx.Destroy)
 })
 
 func isSocketAvailable(socketPath string) (bool, error) {

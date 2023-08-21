@@ -1,4 +1,4 @@
-name: Run e2e tests
+name: Run integration tests
 
 on:
   pull_request:
@@ -7,8 +7,10 @@ on:
       - 'docs/**'
 
 jobs:
-  setup-microceph:
+  integration-tests:
     runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'integration-tests')
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -46,6 +48,7 @@ jobs:
           sudo rm -rf /etc/ceph
           sudo ln -s /var/snap/microceph/current/conf/ /etc/ceph
           sudo microceph enable rgw
+          sudo ceph osd pool create devpool 8
 
       - name: Waiting for Ceph cluster and pools to be healthy
         run: |
@@ -61,7 +64,7 @@ jobs:
           done
 
           # Check Pools
-          pool_to_check=".mgr"
+          pool_to_check="devpool"
           pool_ready=false
           for i in {1..30}; do  
             pools=$(ceph osd lspools)
@@ -85,10 +88,11 @@ jobs:
       - name: Set Environment Variables
         run: |
           echo "CEPH_USERNAME=admin" >> $GITHUB_ENV
-          echo "CEPH_POOLNAME=.mgr" >> $GITHUB_ENV
+          echo "CEPH_POOLNAME=devpool" >> $GITHUB_ENV
           echo "CEPH_CLIENTNAME=client.admin" >> $GITHUB_ENV
           echo "CEPH_KEYRING_FILENAME=/etc/ceph/ceph.client.admin.keyring" >> $GITHUB_ENV
           echo "CEPH_MONITORS=$(hostname):6789" >> $GITHUB_ENV
+          echo "CEPH_CONFIG_FILE=/etc/ceph/ceph.conf" >> $GITHUB_ENV
           sudo chmod +r /etc/ceph/ceph.client.admin.keyring
 
       - name: Install dependencies
@@ -97,4 +101,4 @@ jobs:
 
       - name: Run go tests
         run: |
-          E2E_TESTS=true CGO=1 go test ./...
+          make integration-tests 
